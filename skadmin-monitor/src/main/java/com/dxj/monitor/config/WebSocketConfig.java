@@ -3,10 +3,12 @@ package com.dxj.monitor.config;
 import com.dxj.monitor.entity.LogMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+import org.springframework.web.socket.server.standard.ServerEndpointExporter;
 
 import javax.annotation.PostConstruct;
 import java.util.concurrent.ExecutorService;
@@ -19,48 +21,12 @@ import java.util.concurrent.Executors;
  * @reference https://cloud.tencent.com/developer/article/1096792
  * @date 2019-04-24
  */
-@Slf4j
 @Configuration
-public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+public class WebSocketConfig {
 
-    @Autowired
-    private SimpMessagingTemplate messagingTemplate;
-
-    private ExecutorService executorService = Executors.newSingleThreadExecutor();
-
-    @Override
-    public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/websocket")
-                .setAllowedOrigins("*")
-                .withSockJS();
+    @Bean
+    public ServerEndpointExporter serverEndpointExporter() {
+        return new ServerEndpointExporter();
     }
 
-    /**
-     * 推送日志到/topic/pullLogger
-     */
-    @PostConstruct
-    public void pushLogger() {
-        Runnable runnable = () -> {
-            while (true) {
-                try {
-                    LogMessage log = LoggerQueue.getInstance().poll();
-                    if (log != null) {
-                        // 格式化异常堆栈信息
-                        if ("ERROR".equals(log.getLevel()) && "com.dxj.common.exception.handler.GlobalExceptionHandler".equals(log.getClassName())) {
-                            log.setBody("<pre>" + log.getBody() + "</pre>");
-                        }
-                        if (log.getClassName().equals("jdbc.resultsettable")) {
-                            log.setBody("<br><pre>" + log.getBody() + "</pre>");
-                        }
-                        if (messagingTemplate != null) {
-                            messagingTemplate.convertAndSend("/topic/logMsg", log);
-                        }
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        };
-        executorService.submit(runnable);
-    }
 }

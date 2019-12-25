@@ -37,6 +37,10 @@ public class Menu implements Serializable {
     @Column(name = "path")
     private String path;
 
+    /** 权限 */
+    @Column(name = "permission")
+    private String permission;
+
     private String component;
 
     private String icon;

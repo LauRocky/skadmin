@@ -129,7 +129,7 @@ public class UserController {
     @PreAuthorize("hasAnyRole('ADMIN','USER_ALL','USER_DELETE')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
 
-        Integer currentLevel = Collections.min(roleService.findByUsers_Id(SecurityContextHolder.getUserId()).stream().map(RoleSmallDTO::getLevel).collect(Collectors.toList()));
+        Integer currentLevel = Collections.min(roleService.findByUsers_Id(SecurityHolder.getUserId()).stream().map(RoleSmallDTO::getLevel).collect(Collectors.toList()));
         Integer optLevel = Collections.min(roleService.findByUsers_Id(id).stream().map(RoleSmallDTO::getLevel).collect(Collectors.toList()));
 
         if (currentLevel > optLevel) {
@@ -148,7 +148,7 @@ public class UserController {
     @PostMapping(value = "/user/validPass")
     public ResponseEntity<Object> validPass(@RequestBody User user) {
 
-        UserDetails userDetails = SecurityContextHolder.getUserDetails();
+        UserDetails userDetails = SecurityHolder.getUserDetails();
         if (!userDetails.getPassword().equals(AesEncryptUtil.encryptPassword(userDetails.getUsername()+ user.getPassword()))) {
             return new ResponseEntity<>(new Result(CodeMsg.VALIDATE_ERROR), HttpStatus.OK);
         }
@@ -163,7 +163,7 @@ public class UserController {
      */
     @PostMapping(value = "/user/updatePass")
     public ResponseEntity<Void> updatePass(@RequestBody User user) {
-        UserDetails userDetails = SecurityContextHolder.getUserDetails();
+        UserDetails userDetails = SecurityHolder.getUserDetails();
         if (userDetails.getPassword().equals(AesEncryptUtil.encryptPassword(userDetails.getUsername() + user.getPassword()))) {
             throw new BadRequestException("新密码不能与旧密码相同");
         }
@@ -179,8 +179,8 @@ public class UserController {
      */
     @PostMapping(value = "/user/updateAvatar")
     public ResponseEntity<Void> updateAvatar(@RequestParam MultipartFile file) {
-        Picture picture = pictureService.upload(file, SecurityContextHolder.getUsername());
-        userService.updateAvatar(SecurityContextHolder.getUsername(), picture.getUrl());
+        Picture picture = pictureService.upload(file, SecurityHolder.getUsername());
+        userService.updateAvatar(SecurityHolder.getUsername(), picture.getUrl());
         return new ResponseEntity<>(HttpStatus.OK);
     }
 
@@ -194,7 +194,7 @@ public class UserController {
     @Log("修改邮箱")
     @PostMapping(value = "/user/updateEmail/{code}")
     public ResponseEntity<Void> updateEmail(@PathVariable String code, @RequestBody User user) {
-        UserDetails userDetails = SecurityContextHolder.getUserDetails();
+        UserDetails userDetails = SecurityHolder.getUserDetails();
         if (!userDetails.getPassword().equals(AesEncryptUtil.encryptPassword(userDetails.getUsername() + user.getPassword()))) {
             throw new BadRequestException("密码错误");
         }
@@ -227,7 +227,7 @@ public class UserController {
      * @param resources
      */
     private void checkLevel(User resources) {
-        Integer currentLevel = Collections.min(roleService.findByUsers_Id(SecurityContextHolder.getUserId()).stream().map(RoleSmallDTO::getLevel).collect(Collectors.toList()));
+        Integer currentLevel = Collections.min(roleService.findByUsers_Id(SecurityHolder.getUserId()).stream().map(RoleSmallDTO::getLevel).collect(Collectors.toList()));
         Integer optLevel = roleService.findByRoles(resources.getRoles());
         if (currentLevel > optLevel) {
             throw new BadRequestException("角色权限不足");

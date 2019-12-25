@@ -3,7 +3,7 @@ package com.dxj.tool.controller;
 import com.dxj.log.annotation.Log;
 import com.dxj.tool.entity.Picture;
 import com.dxj.tool.service.PictureService;
-import com.dxj.common.util.SecurityContextHolder;
+import com.dxj.common.util.SecurityHolder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -48,7 +48,7 @@ public class PictureController {
     @PreAuthorize("hasAnyRole('ADMIN','PICTURE_ALL','PICTURE_UPLOAD')")
     @PostMapping(value = "/picture")
     public ResponseEntity<Map<String, Object>> upload(@RequestParam MultipartFile file) {
-        String userName = SecurityContextHolder.getUsername();
+        String userName = SecurityHolder.getUsername();
         Picture picture = pictureService.upload(file, userName);
         Map<String, Object> map = new HashMap<>();
         map.put("errno", 0);

@@ -3,7 +3,7 @@ package com.dxj.log.service;
 import cn.hutool.json.JSONObject;
 import com.dxj.common.util.IpInfoUtil;
 import com.dxj.common.util.RequestHolder;
-import com.dxj.common.util.SecurityContextHolder;
+import com.dxj.common.util.SecurityHolder;
 import com.dxj.log.entity.LoginLog;
 import com.dxj.log.repository.LoginLogRepository;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -72,7 +72,7 @@ public class LoginLogService {
         log.setRequestIp(IpInfoUtil.getIpAddr(request));
 
         if (!"login".equals(signature.getName())) {
-            UserDetails userDetails = SecurityContextHolder.getUserDetails();
+            UserDetails userDetails = SecurityHolder.getUserDetails();
             username = userDetails.getUsername();
         } else {
             try {

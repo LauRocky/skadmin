@@ -1,7 +1,7 @@
 package com.dxj.log.controller;
 
 import cn.hutool.core.lang.Dict;
-import com.dxj.common.util.SecurityContextHolder;
+import com.dxj.common.util.SecurityHolder;
 import com.dxj.log.entity.Log;
 import com.dxj.log.entity.LoginLog;
 import com.dxj.log.service.LogService;
@@ -42,7 +42,7 @@ public class LogController {
     @GetMapping(value = "/log/user")
     public ResponseEntity<Object> getUserLog(Log log, Pageable pageable) {
         log.setLogType("INFO");
-        log.setUsername(SecurityContextHolder.getUsername());
+        log.setUsername(SecurityHolder.getUsername());
         return new ResponseEntity<>(logService.queryAllByUser(log, pageable), HttpStatus.OK);
     }
 

@@ -11,7 +11,7 @@ import org.springframework.security.core.userdetails.UserDetails;
  * @author dxj
  * @date 2019-04-17
  */
-public class SecurityContextHolder {
+public class SecurityHolder {
 
     public static UserDetails getUserDetails() {
         UserDetails userDetails;

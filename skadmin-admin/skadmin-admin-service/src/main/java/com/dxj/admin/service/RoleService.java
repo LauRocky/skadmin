@@ -4,6 +4,7 @@ import com.dxj.admin.entity.Menu;
 import com.dxj.admin.entity.Role;
 import com.dxj.admin.entity.dto.RoleDTO;
 import com.dxj.admin.entity.dto.RoleSmallDTO;
+import com.dxj.admin.entity.dto.UserDTO;
 import com.dxj.admin.mapper.RoleMapper;
 import com.dxj.admin.mapper.RoleSmallMapper;
 import com.dxj.admin.query.CommonQuery;
@@ -11,6 +12,7 @@ import com.dxj.admin.repository.RoleRepository;
 import com.dxj.common.exception.EntityExistException;
 import com.dxj.common.util.BaseQuery;
 import com.dxj.common.util.PageUtil;
+import com.dxj.common.util.StringUtil;
 import com.dxj.common.util.ValidationUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheConfig;
@@ -18,6 +20,8 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +49,11 @@ public class RoleService {
         this.roleRepository = roleRepository;
         this.roleMapper = roleMapper;
         this.roleSmallMapper = roleSmallMapper;
+    }
+
+    @Cacheable(key = "'findByUsers_Id:' + #p0")
+    public List<RoleSmallDTO> findByUsersId(Long id) {
+        return roleSmallMapper.toDto(new ArrayList<>(roleRepository.findByUsers_Id(id)));
     }
 
     @Cacheable(key = "#p0")
@@ -146,5 +155,18 @@ public class RoleService {
     @Cacheable(keyGenerator = "keyGenerator")
     public List<RoleDTO> queryAll(Pageable pageable) {
         return roleMapper.toDto(roleRepository.findAll(pageable).getContent());
+    }
+
+    @Cacheable(key = "'loadPermissionByUser:' + #p0.username")
+    public Collection<GrantedAuthority> mapToGrantedAuthorities(UserDTO user) {
+        Set<Role> roles = roleRepository.findByUsers_Id(user.getId());
+        Set<String> permissions = roles.stream().filter(role -> StringUtil.isNotBlank(role.getPermission())).map(Role::getPermission).collect(Collectors.toSet());
+        permissions.addAll(
+                roles.stream().flatMap(role -> role.getMenus().stream())
+                        .filter(menu -> StringUtil.isNotBlank(menu.getPermission()))
+                        .map(Menu::getPermission).collect(Collectors.toSet())
+        );
+        return permissions.stream().map(SimpleGrantedAuthority::new)
+                .collect(Collectors.toList());
     }
 }

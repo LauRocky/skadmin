@@ -10,7 +10,7 @@ import com.dxj.admin.service.RoleService;
 import com.dxj.admin.service.UserService;
 import com.dxj.common.enums.CommEnum;
 import com.dxj.common.exception.BadRequestException;
-import com.dxj.common.util.SecurityContextHolder;
+import com.dxj.common.util.SecurityHolder;
 import com.dxj.log.annotation.Log;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -52,7 +52,7 @@ public class MenuController {
      */
     @GetMapping(value = "/menu/build")
     public ResponseEntity<List<MenuVo>> buildMenus() {
-        UserDTO user = userService.findByName(SecurityContextHolder.getUsername());
+        UserDTO user = userService.findByName(SecurityHolder.getUsername());
         List<MenuDTO> menuDTOList = menuService.findByRoles(roleService.findByUsers_Id(user.getId()));
         List<MenuDTO> menuDTOTree = (List<MenuDTO>) menuService.buildTree(menuDTOList).get("content");
         return new ResponseEntity<>(menuService.buildMenus(menuDTOTree), HttpStatus.OK);

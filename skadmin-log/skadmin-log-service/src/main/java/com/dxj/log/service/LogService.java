@@ -91,7 +91,7 @@ public class LogService {
 
         String loginPath = "login";
         if (!loginPath.equals(signature.getName())) {
-            UserDetails userDetails = SecurityContextHolder.getUserDetails();
+            UserDetails userDetails = SecurityHolder.getUserDetails();
             username = userDetails.getUsername();
         } else {
             try {

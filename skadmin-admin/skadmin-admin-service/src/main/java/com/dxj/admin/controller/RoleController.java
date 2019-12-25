@@ -8,7 +8,7 @@ import com.dxj.admin.query.CommonQuery;
 import com.dxj.admin.service.RoleService;
 import com.dxj.common.enums.CommEnum;
 import com.dxj.common.exception.BadRequestException;
-import com.dxj.common.util.SecurityContextHolder;
+import com.dxj.common.util.SecurityHolder;
 import com.dxj.log.annotation.Log;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Pageable;
@@ -65,7 +65,7 @@ public class RoleController {
     }
     @GetMapping(value = "/role/level")
     public ResponseEntity<Object> getLevel(){
-        List<Integer> levels = roleService.findByUsers_Id(SecurityContextHolder.getUserId()).stream().map(RoleSmallDTO::getLevel).collect(Collectors.toList());
+        List<Integer> levels = roleService.findByUsers_Id(SecurityHolder.getUserId()).stream().map(RoleSmallDTO::getLevel).collect(Collectors.toList());
         return new ResponseEntity<>(Dict.create().set("level", Collections.min(levels)), HttpStatus.OK);
     }
     @Log("新增角色")
