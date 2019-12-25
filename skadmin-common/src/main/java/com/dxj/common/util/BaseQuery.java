@@ -29,7 +29,7 @@ public class BaseQuery {
     public static <R, Q> Predicate getPredicate(Root<R> root, Q query, CriteriaBuilder cb) {
         List<Predicate> list = new ArrayList<>();
 
-        if (query == null) {
+        if(query == null){
             return cb.and(list.toArray(new Predicate[0]));
         }
         try {
@@ -41,27 +41,60 @@ public class BaseQuery {
                 if (q != null) {
                     String propName = q.propName();
                     String joinName = q.joinName();
+                    String blurry = q.blurry();
                     String attributeName = isBlank(propName) ? field.getName() : propName;
                     Class<?> fieldType = field.getType();
                     Object val = field.get(query);
-                    if (ObjectUtil.isNull(val)) {
+                    if (ObjectUtil.isNull(val) || "".equals(val)) {
                         continue;
                     }
                     Join join = null;
+                    // 模糊多字段
+                    if (ObjectUtil.isNotEmpty(blurry)) {
+                        String[] blurrys = blurry.split(",");
+                        List<Predicate> orPredicate = new ArrayList<>();
+                        for (String s : blurrys) {
+                            orPredicate.add(cb.like(root.get(s)
+                                    .as(String.class), "%" + val.toString() + "%"));
+                        }
+                        Predicate[] p = new Predicate[orPredicate.size()];
+                        list.add(cb.or(orPredicate.toArray(p)));
+                        continue;
+                    }
                     if (ObjectUtil.isNotEmpty(joinName)) {
-                        switch (q.join()) {
-                            case LEFT:
-                                join = root.join(joinName, JoinType.LEFT);
-                                break;
-                            case RIGHT:
-                                join = root.join(joinName, JoinType.RIGHT);
-                                break;
+                        String[] joinNames = joinName.split(">");
+                        for (String name : joinNames) {
+                            switch (q.join()) {
+                                case LEFT:
+                                    if(ObjectUtil.isNotNull(join)){
+                                        join = join.join(name, JoinType.LEFT);
+                                    } else {
+                                        join = root.join(name, JoinType.LEFT);
+                                    }
+                                    break;
+                                case RIGHT:
+                                    if(ObjectUtil.isNotNull(join)){
+                                        join = join.join(name, JoinType.RIGHT);
+                                    } else {
+                                        join = root.join(name, JoinType.RIGHT);
+                                    }
+                                    break;
+                                default: break;
+                            }
                         }
                     }
                     switch (q.type()) {
                         case EQUAL:
-                            list.add(cb.equal(getExpression(attributeName, join, root)
-                                    .as((Class<? extends Comparable>) fieldType), val));
+                            list.add(cb.equal(getExpression(attributeName,join,root)
+                                    .as((Class<? extends Comparable>) fieldType),val));
+                            break;
+                        case GREATER_THAN:
+                            list.add(cb.greaterThanOrEqualTo(getExpression(attributeName,join,root)
+                                    .as((Class<? extends Comparable>) fieldType), (Comparable) val));
+                            break;
+                        case LESS_THAN:
+                            list.add(cb.lessThanOrEqualTo(getExpression(attributeName,join,root)
+                                    .as((Class<? extends Comparable>) fieldType), (Comparable) val));
                             break;
                         case GREATER_THAN_EQUAL:
                             list.add(cb.greaterThanOrEqualTo(getExpression(attributeName, join, root)
@@ -71,22 +104,21 @@ public class BaseQuery {
                             list.add(cb.lessThanOrEqualTo(getExpression(attributeName, join, root)
                                     .as((Class<? extends Comparable>) fieldType), (Comparable) val));
                             break;
-                        case GREATER_THAN:
-                            list.add(cb.greaterThan(getExpression(attributeName, join, root)
-                                    .as((Class<? extends Comparable>) fieldType), (Comparable) val));
-                        case LESS_THAN:
-                            list.add(cb.lessThan(getExpression(attributeName, join, root)
-                                    .as((Class<? extends Comparable>) fieldType), (Comparable) val));
-                            break;
                         case LIKE:
-                            list.add(cb.like(getExpression(attributeName, join, root)
+                            list.add(cb.like(getExpression(attributeName,join,root)
                                     .as(String.class), "%" + val.toString() + "%"));
                             break;
                         case IN:
-                            if (CollUtil.isNotEmpty((Collection<Long>) val)) {
-                                list.add(getExpression(attributeName, join, root).in((Collection<Long>) val));
+                            if (CollUtil.isNotEmpty((Collection<Long>)val)) {
+                                list.add(getExpression(attributeName,join,root).in((Collection<Long>) val));
                             }
                             break;
+                        case BETWEEN:
+                            List<Object> between = new ArrayList<>((List<Object>)val);
+                            list.add(cb.between(getExpression(attributeName, join, root).as((Class<? extends Comparable>) between.get(0).getClass()),
+                                    (Comparable) between.get(0), (Comparable) between.get(1)));
+                            break;
+                        default: break;
                     }
                 }
                 field.setAccessible(accessible);
@@ -94,14 +126,17 @@ public class BaseQuery {
         } catch (Exception e) {
             log.error(e.getMessage(), e);
         }
-        return cb.and(list.toArray(new Predicate[0]));
+        int size = list.size();
+        return cb.and(list.toArray(new Predicate[size]));
     }
 
     @SuppressWarnings("unchecked")
     private static <T, R> Expression<T> getExpression(String attributeName, Join join, Root<R> root) {
         if (ObjectUtil.isNotEmpty(join)) {
             return join.get(attributeName);
-        } else return root.get(attributeName);
+        } else {
+            return root.get(attributeName);
+        }
     }
 
     private static boolean isBlank(final CharSequence cs) {

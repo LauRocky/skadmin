@@ -1,11 +1,15 @@
 package com.dxj.admin.entity;
 
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import org.hibernate.annotations.CreationTimestamp;
 
 import javax.persistence.*;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import java.io.Serializable;
+import java.sql.Timestamp;
 import java.util.List;
 
 
@@ -14,7 +18,8 @@ import java.util.List;
 * @date 2019-04-10
 */
 @Entity
-@Data
+@Getter
+@Setter
 @Table(name="dict")
 public class Dict implements Serializable {
 
@@ -24,17 +29,19 @@ public class Dict implements Serializable {
     @NotNull(groups = Update.class)
     private Long id;
 
-   // 字典名称
     @Column(name = "name",nullable = false,unique = true)
     @NotBlank
     private String name;
 
-    // 描述
     @Column(name = "remark")
     private String remark;
+
+    @Column(name = "create_time")
+    @CreationTimestamp
+    private Timestamp createTime;
 
     @OneToMany(mappedBy = "dict",cascade={CascadeType.PERSIST,CascadeType.REMOVE})
     private List<DictDetail> dictDetails;
 
-    public interface Update {}
+    public @interface Update {}
 }

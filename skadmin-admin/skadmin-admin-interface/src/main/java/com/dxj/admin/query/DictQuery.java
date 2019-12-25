@@ -10,9 +10,6 @@ import lombok.Data;
 @Data
 public class DictQuery {
 
-    @Query(type = Query.Type.LIKE)
-    private String name;
-
-    @Query(type = Query.Type.LIKE)
-    private String remark;
+    @Query(blurry = "name,remark")
+    private String blurry;
 }

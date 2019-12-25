@@ -1,11 +1,20 @@
 package com.dxj.common.util;
 
+import cn.hutool.core.io.IoUtil;
 import cn.hutool.core.util.IdUtil;
+import cn.hutool.poi.excel.BigExcelWriter;
+import cn.hutool.poi.excel.ExcelUtil;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.servlet.ServletOutputStream;
+import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.IOException;
 import java.text.DecimalFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
 
 /**
  * File工具类，扩展 hutool 工具包
@@ -107,7 +116,7 @@ public class FileUtil extends cn.hutool.core.io.FileUtil {
      * @param size
      * @return
      */
-    public static String getSize(int size) {
+    public static String getSize(long size){
         String resultSize;
         if (size / GB >= 1) {
             //如果当前Byte的值大于等于1GB
@@ -145,5 +154,53 @@ public class FileUtil extends cn.hutool.core.io.FileUtil {
         } else {
             return String.format("%d B", size);
         }
+    }
+
+    /**
+     * 导出excel
+     */
+    public static void downloadExcel(List<Map<String, Object>> list, HttpServletResponse response) throws IOException {
+        String tempPath =System.getProperty("java.io.tmpdir") + IdUtil.fastSimpleUUID() + ".xlsx";
+        File file = new File(tempPath);
+        BigExcelWriter writer= ExcelUtil.getBigWriter(file);
+        // 一次性写出内容，使用默认样式，强制输出标题
+        writer.write(list, true);
+        //response为HttpServletResponse对象
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=utf-8");
+        //test.xls是弹出下载对话框的文件名，不能为中文，中文请自行编码
+        response.setHeader("Content-Disposition","attachment;filename=file.xlsx");
+        ServletOutputStream out=response.getOutputStream();
+        // 终止后删除临时文件
+        file.deleteOnExit();
+        writer.flush(out, true);
+        //此处记得关闭输出Servlet流
+        IoUtil.close(out);
+    }
+
+    /**
+     * 将文件名解析成文件的上传路径
+     */
+    public static File upload(MultipartFile file, String filePath) {
+        Date date = new Date();
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMddhhmmssS");
+        String name = getFileNameNoEx(file.getOriginalFilename());
+        String suffix = getExtensionName(file.getOriginalFilename());
+        String nowStr = "-" + format.format(date);
+        try {
+            String fileName = name + nowStr + "." + suffix;
+            String path = filePath + fileName;
+            // getCanonicalFile 可解析正确各种路径
+            File dest = new File(path).getCanonicalFile();
+            // 检测是否存在目录
+            if (!dest.getParentFile().exists()) {
+                dest.getParentFile().mkdirs();
+            }
+            // 文件写入
+            file.transferTo(dest);
+            return dest;
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }

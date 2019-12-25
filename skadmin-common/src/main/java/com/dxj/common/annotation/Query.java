@@ -30,6 +30,11 @@ public @interface Query {
      */
     Join join() default Join.LEFT;
 
+    /**
+     * 多字段模糊搜索，仅支持String类型字段，多个用逗号隔开, 如@Query(blurry = "email,username")
+     */
+    String blurry() default "";
+
     enum Type {
         EQUAL
         // 大于等于
@@ -44,6 +49,8 @@ public @interface Query {
         , GREATER_THAN
         // 在之内
         , IN
+        // between
+        ,BETWEEN
     }
 
     /**

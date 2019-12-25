@@ -3,6 +3,8 @@ package com.dxj.admin.entity.dto;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.sql.Timestamp;
+import java.util.List;
 
 /**
 * @author dxj
@@ -18,4 +20,8 @@ public class DictDTO implements Serializable {
 
     // 描述
     private String remark;
+
+    private List<DictDetailDTO> dictDetails;
+
+    private Timestamp createTime;
 }

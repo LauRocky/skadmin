@@ -3,6 +3,7 @@ package com.dxj.admin.entity.dto;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.sql.Timestamp;
 
 /**
 * @author dxj
@@ -21,4 +22,8 @@ public class DictDetailDTO implements Serializable {
 
     // 排序
     private String sort;
+
+    private DictSmallDTO dict;
+
+    private Timestamp createTime;
 }

@@ -3,6 +3,8 @@ package com.dxj.admin.query;
 import com.dxj.common.annotation.Query;
 import lombok.Data;
 
+import java.sql.Timestamp;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -23,4 +25,7 @@ public class JobQuery {
 
     @Query(propName = "id", joinName = "dept", type = Query.Type.IN)
     private Set<Long> deptIds;
+
+    @Query(type = Query.Type.BETWEEN)
+    private List<Timestamp> createTime;
 }

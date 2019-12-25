@@ -8,12 +8,10 @@ import com.dxj.admin.entity.dto.UserDTO;
 import com.dxj.admin.mapper.RoleMapper;
 import com.dxj.admin.mapper.RoleSmallMapper;
 import com.dxj.admin.query.CommonQuery;
+import com.dxj.admin.query.RoleQuery;
 import com.dxj.admin.repository.RoleRepository;
 import com.dxj.common.exception.EntityExistException;
-import com.dxj.common.util.BaseQuery;
-import com.dxj.common.util.PageUtil;
-import com.dxj.common.util.StringUtil;
-import com.dxj.common.util.ValidationUtil;
+import com.dxj.common.util.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheConfig;
 import org.springframework.cache.annotation.CacheEvict;
@@ -26,6 +24,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -44,30 +44,40 @@ public class RoleService {
 
     private final RoleSmallMapper roleSmallMapper;
 
-    @Autowired
     public RoleService(RoleRepository roleRepository, RoleMapper roleMapper, RoleSmallMapper roleSmallMapper) {
         this.roleRepository = roleRepository;
         this.roleMapper = roleMapper;
         this.roleSmallMapper = roleSmallMapper;
     }
 
-    @Cacheable(key = "'findByUsers_Id:' + #p0")
-    public List<RoleSmallDTO> findByUsersId(Long id) {
-        return roleSmallMapper.toDto(new ArrayList<>(roleRepository.findByUsers_Id(id)));
+    @Cacheable
+    public Object queryAll(Pageable pageable) {
+        return roleMapper.toDto(roleRepository.findAll(pageable).getContent());
+    }
+
+    @Cacheable
+    public List<RoleDTO> queryAll(RoleQuery criteria) {
+        return roleMapper.toDto(roleRepository.findAll((root, criteriaQuery, criteriaBuilder) -> BaseQuery.getPredicate(root,criteria,criteriaBuilder)));
+    }
+
+    @Cacheable
+    public Object queryAll(RoleQuery criteria, Pageable pageable) {
+        Page<Role> page = roleRepository.findAll((root, criteriaQuery, criteriaBuilder) -> BaseQuery.getPredicate(root,criteria,criteriaBuilder),pageable);
+        return PageUtil.toPage(page.map(roleMapper::toDto));
     }
 
     @Cacheable(key = "#p0")
     public RoleDTO findById(long id) {
-        Optional<Role> role = roleRepository.findById(id);
-        ValidationUtil.isNull(role, "Role", "id", id);
-        return roleMapper.toDto(role.orElse(null));
+        Role role = roleRepository.findById(id).orElseGet(Role::new);
+        ValidationUtil.isNull(role.getId(),"Role","id",id);
+        return roleMapper.toDto(role);
     }
 
     @CacheEvict(allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public RoleDTO create(Role resources) {
-        if (roleRepository.findByName(resources.getName()) != null) {
-            throw new EntityExistException(Role.class, "username", resources.getName());
+        if(roleRepository.findByName(resources.getName()) != null){
+            throw new EntityExistException(Role.class,"username",resources.getName());
         }
         return roleMapper.toDto(roleRepository.save(resources));
     }
@@ -75,31 +85,24 @@ public class RoleService {
     @CacheEvict(allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public void update(Role resources) {
-
-        Optional<Role> optionalRole = roleRepository.findById(resources.getId());
-        ValidationUtil.isNull(optionalRole, "Role", "id", resources.getId());
-
-        Role role = optionalRole.orElse(null);
+        Role role = roleRepository.findById(resources.getId()).orElseGet(Role::new);
+        ValidationUtil.isNull(role.getId(),"Role","id",resources.getId());
 
         Role role1 = roleRepository.findByName(resources.getName());
 
-        assert role != null;
-        if (role1 != null && !role1.getId().equals(role.getId())) {
-            throw new EntityExistException(Role.class, "username", resources.getName());
+        if(role1 != null && !role1.getId().equals(role.getId())){
+            throw new EntityExistException(Role.class,"username",resources.getName());
         }
-
+        role1 = roleRepository.findByPermission(resources.getPermission());
+        if(role1 != null && !role1.getId().equals(role.getId())){
+            throw new EntityExistException(Role.class,"permission",resources.getPermission());
+        }
         role.setName(resources.getName());
         role.setRemark(resources.getRemark());
         role.setDataScope(resources.getDataScope());
         role.setDepts(resources.getDepts());
         role.setLevel(resources.getLevel());
-        roleRepository.save(role);
-    }
-
-    @CacheEvict(allEntries = true)
-    public void updatePermission(Role resources, RoleDTO roleDTO) {
-        Role role = roleMapper.toEntity(roleDTO);
-        role.setPermissions(resources.getPermissions());
+        role.setPermission(resources.getPermission());
         roleRepository.save(role);
     }
 
@@ -111,50 +114,31 @@ public class RoleService {
     }
 
     @CacheEvict(allEntries = true)
-    public void untiedMenu(Menu menu) {
-        Set<Role> roles = roleRepository.findByMenus_Id(menu.getId());
-        for (Role role : roles) {
-            menu.getRoles().remove(role);
-            role.getMenus().remove(menu);
-            roleRepository.save(role);
-        }
+    @Transactional(rollbackFor = Exception.class)
+    public void untiedMenu(Long id) {
+        roleRepository.untiedMenu(id);
     }
 
     @CacheEvict(allEntries = true)
     @Transactional(rollbackFor = Exception.class)
-    public void delete(Long id) {
-        roleRepository.deleteById(id);
+    public void delete(Set<Long> ids) {
+        for (Long id : ids) {
+            roleRepository.deleteById(id);
+        }
     }
 
     @Cacheable(key = "'findByUsers_Id:' + #p0")
-    public List<RoleSmallDTO> findByUsers_Id(Long id) {
+    public List<RoleSmallDTO> findByUsersId(Long id) {
         return roleSmallMapper.toDto(new ArrayList<>(roleRepository.findByUsers_Id(id)));
     }
 
-    @Cacheable(keyGenerator = "keyGenerator")
+    @Cacheable
     public Integer findByRoles(Set<Role> roles) {
-        Set<RoleDTO> roleDTOS = new HashSet<>();
+        Set<RoleDTO> roleDtos = new HashSet<>();
         for (Role role : roles) {
-            roleDTOS.add(findById(role.getId()));
+            roleDtos.add(findById(role.getId()));
         }
-        return Collections.min(roleDTOS.stream().map(RoleDTO::getLevel).collect(Collectors.toList()));
-    }
-
-    /**
-     * 分页
-     */
-    @Cacheable(keyGenerator = "keyGenerator")
-    public Map<String, Object> queryAll(CommonQuery query, Pageable pageable) {
-        Page<Role> page = roleRepository.findAll((root, criteriaQuery, criteriaBuilder) -> BaseQuery.getPredicate(root, query, criteriaBuilder), pageable);
-        return PageUtil.toPage(page.map(roleMapper::toDto));
-    }
-
-    /**
-     * 不分页
-     */
-    @Cacheable(keyGenerator = "keyGenerator")
-    public List<RoleDTO> queryAll(Pageable pageable) {
-        return roleMapper.toDto(roleRepository.findAll(pageable).getContent());
+        return Collections.min(roleDtos.stream().map(RoleDTO::getLevel).collect(Collectors.toList()));
     }
 
     @Cacheable(key = "'loadPermissionByUser:' + #p0.username")
@@ -168,5 +152,19 @@ public class RoleService {
         );
         return permissions.stream().map(SimpleGrantedAuthority::new)
                 .collect(Collectors.toList());
+    }
+
+    public void download(List<RoleDTO> roles, HttpServletResponse response) throws IOException {
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (RoleDTO role : roles) {
+            Map<String,Object> map = new LinkedHashMap<>();
+            map.put("角色名称", role.getName());
+            map.put("默认权限", role.getPermission());
+            map.put("角色级别", role.getLevel());
+            map.put("描述", role.getRemark());
+            map.put("创建日期", role.getCreateTime());
+            list.add(map);
+        }
+        FileUtil.downloadExcel(list, response);
     }
 }

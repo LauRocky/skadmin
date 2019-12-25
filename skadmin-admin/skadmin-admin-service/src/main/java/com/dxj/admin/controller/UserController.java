@@ -1,13 +1,17 @@
 package com.dxj.admin.controller;
 
+import cn.hutool.crypto.asymmetric.KeyType;
+import cn.hutool.crypto.asymmetric.RSA;
 import com.dxj.admin.config.DataScope;
 import com.dxj.admin.entity.User;
 import com.dxj.admin.entity.dto.RoleSmallDTO;
 import com.dxj.admin.entity.dto.UserDTO;
+import com.dxj.admin.entity.vo.UserPassVo;
 import com.dxj.admin.query.UserQuery;
 import com.dxj.admin.service.DeptService;
 import com.dxj.admin.service.RoleService;
 import com.dxj.admin.service.UserService;
+import com.dxj.common.constant.ElAdminConstant;
 import com.dxj.common.enums.CommEnum;
 import com.dxj.common.exception.BadRequestException;
 import com.dxj.common.response.CodeMsg;
@@ -20,18 +24,24 @@ import com.dxj.tool.entity.vo.EmailVo;
 import com.dxj.tool.service.EmailService;
 import com.dxj.tool.service.PictureService;
 import com.dxj.tool.service.VerificationCodeService;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.ObjectUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -39,195 +49,170 @@ import java.util.stream.Collectors;
  * @author dxj
  * @date 2019-04-23
  */
+@Api(tags = "系统：用户管理")
 @RestController
-@RequestMapping("api")
+@RequestMapping("/api/users")
 public class UserController {
 
+    @Value("${rsa.private_key}")
+    private String privateKey;
+    private final PasswordEncoder passwordEncoder;
     private final UserService userService;
-
-    private final PictureService pictureService;
-
     private final DataScope dataScope;
-
     private final DeptService deptService;
-
     private final RoleService roleService;
-
     private final VerificationCodeService verificationCodeService;
 
-    private final EmailService emailService;
-
-    @Autowired
-    public UserController(UserService userService, PictureService pictureService, DataScope dataScope, DeptService deptService, VerificationCodeService verificationCodeService, RoleService roleService, EmailService emailService) {
+    public UserController(PasswordEncoder passwordEncoder, UserService userService, DataScope dataScope, DeptService deptService, RoleService roleService, VerificationCodeService verificationCodeService) {
+        this.passwordEncoder = passwordEncoder;
         this.userService = userService;
-        this.pictureService = pictureService;
         this.dataScope = dataScope;
         this.deptService = deptService;
-        this.verificationCodeService = verificationCodeService;
         this.roleService = roleService;
-        this.emailService = emailService;
+        this.verificationCodeService = verificationCodeService;
+    }
+
+    @Log("导出用户数据")
+    @ApiOperation("导出用户数据")
+    @GetMapping(value = "/download")
+    @PreAuthorize("@el.check('user:list')")
+    public void download(HttpServletResponse response, UserQuery criteria) throws IOException {
+        userService.download(userService.queryAll(criteria), response);
     }
 
     @Log("查询用户")
-    @GetMapping(value = "/user")
-    @PreAuthorize("hasAnyRole('ADMIN','USER_ALL','USER_SELECT')")
-    public ResponseEntity<Map<String, Object>> getUsers(UserQuery query, Pageable pageable) {
+    @ApiOperation("查询用户")
+    @GetMapping
+    @PreAuthorize("@el.check('user:list')")
+    public ResponseEntity<Object> getUsers(UserQuery criteria, Pageable pageable){
         Set<Long> deptSet = new HashSet<>();
         Set<Long> result = new HashSet<>();
-
-        if (!ObjectUtils.isEmpty(query.getDeptId())) {
-            deptSet.add(query.getDeptId());
-            deptSet.addAll(dataScope.getDeptChildren(deptService.findByPid(query.getDeptId())));
+        if (!ObjectUtils.isEmpty(criteria.getDeptId())) {
+            deptSet.add(criteria.getDeptId());
+            deptSet.addAll(dataScope.getDeptChildren(deptService.findByPid(criteria.getDeptId())));
         }
-
         // 数据权限
         Set<Long> deptIds = dataScope.getDeptIds();
-
         // 查询条件不为空并且数据权限不为空则取交集
-        if (!CollectionUtils.isEmpty(deptIds) && !CollectionUtils.isEmpty(deptSet)) {
-
+        if (!CollectionUtils.isEmpty(deptIds) && !CollectionUtils.isEmpty(deptSet)){
             // 取交集
             result.addAll(deptSet);
             result.retainAll(deptIds);
-
             // 若无交集，则代表无数据权限
-            query.setDeptIds(result);
-            if (result.size() == 0) {
-                return new ResponseEntity<>(PageUtil.toPage(null, 0), HttpStatus.OK);
-            } else return new ResponseEntity<>(userService.queryAll(query, pageable), HttpStatus.OK);
+            criteria.setDeptIds(result);
+            if(result.size() == 0){
+                return new ResponseEntity<>(PageUtil.toPage(null,0),HttpStatus.OK);
+            } else {
+                return new ResponseEntity<>(userService.queryAll(criteria,pageable),HttpStatus.OK);
+            }
             // 否则取并集
         } else {
             result.addAll(deptSet);
             result.addAll(deptIds);
-            query.setDeptIds(result);
-            return new ResponseEntity<>(userService.queryAll(query, pageable), HttpStatus.OK);
+            criteria.setDeptIds(result);
+            return new ResponseEntity<>(userService.queryAll(criteria,pageable),HttpStatus.OK);
         }
     }
 
     @Log("新增用户")
-    @PostMapping(value = "/user")
-    @PreAuthorize("hasAnyRole('ADMIN','USER_ALL','USER_CREATE')")
-    public ResponseEntity<UserDTO> create(@Validated @RequestBody User resources) {
-        if (resources.getId() != null) {
-            throw new BadRequestException("A new " + CommEnum.USER_ENTITY + " cannot already have an ID");
-        }
+    @ApiOperation("新增用户")
+    @PostMapping
+    @PreAuthorize("@el.check('user:add')")
+    public ResponseEntity<Object> create(@Validated @RequestBody User resources){
         checkLevel(resources);
-        return new ResponseEntity<>(userService.create(resources), HttpStatus.CREATED);
+        // 默认密码 123456
+        resources.setPassword(passwordEncoder.encode("123456"));
+        return new ResponseEntity<>(userService.create(resources),HttpStatus.CREATED);
     }
 
     @Log("修改用户")
-    @PutMapping(value = "/user")
-    @PreAuthorize("hasAnyRole('ADMIN','USER_ALL','USER_EDIT')")
-    public ResponseEntity<Void> update(@Validated(User.Update.class) @RequestBody User resources) {
+    @ApiOperation("修改用户")
+    @PutMapping
+    @PreAuthorize("@el.check('user:edit')")
+    public ResponseEntity<Object> update(@Validated(User.Update.class) @RequestBody User resources){
         checkLevel(resources);
         userService.update(resources);
         return new ResponseEntity<>(HttpStatus.NO_CONTENT);
     }
 
-    @Log("删除用户")
-    @DeleteMapping(value = "/user/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','USER_ALL','USER_DELETE')")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
-
-        Integer currentLevel = Collections.min(roleService.findByUsers_Id(SecurityHolder.getUserId()).stream().map(RoleSmallDTO::getLevel).collect(Collectors.toList()));
-        Integer optLevel = Collections.min(roleService.findByUsers_Id(id).stream().map(RoleSmallDTO::getLevel).collect(Collectors.toList()));
-
-        if (currentLevel > optLevel) {
-            throw new BadRequestException("角色权限不足");
+    @Log("修改用户：个人中心")
+    @ApiOperation("修改用户：个人中心")
+    @PutMapping(value = "center")
+    public ResponseEntity<Object> center(@Validated(User.Update.class) @RequestBody User resources){
+        UserDTO userDto = userService.findByName(SecurityHolder.getUsername());
+        if(!resources.getId().equals(userDto.getId())){
+            throw new BadRequestException("不能修改他人资料");
         }
-        userService.delete(id);
+        userService.updateCenter(resources);
+        return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+    }
+
+    @Log("删除用户")
+    @ApiOperation("删除用户")
+    @DeleteMapping
+    @PreAuthorize("@el.check('user:del')")
+    public ResponseEntity<Object> delete(@RequestBody Set<Long> ids){
+        UserDTO user = userService.findByName(SecurityHolder.getUsername());
+        for (Long id : ids) {
+            Integer currentLevel =  Collections.min(roleService.findByUsersId(user.getId()).stream().map(RoleSmallDTO::getLevel).collect(Collectors.toList()));
+            Integer optLevel =  Collections.min(roleService.findByUsersId(id).stream().map(RoleSmallDTO::getLevel).collect(Collectors.toList()));
+            if (currentLevel > optLevel) {
+                throw new BadRequestException("角色权限不足，不能删除：" + userService.findByName(SecurityHolder.getUsername()).getUsername());
+            }
+        }
+        userService.delete(ids);
         return new ResponseEntity<>(HttpStatus.OK);
     }
 
-    /**
-     * 验证密码
-     *
-     * @param user
-     * @return
-     */
-    @PostMapping(value = "/user/validPass")
-    public ResponseEntity<Object> validPass(@RequestBody User user) {
-
-        UserDetails userDetails = SecurityHolder.getUserDetails();
-        if (!userDetails.getPassword().equals(AesEncryptUtil.encryptPassword(userDetails.getUsername()+ user.getPassword()))) {
-            return new ResponseEntity<>(new Result(CodeMsg.VALIDATE_ERROR), HttpStatus.OK);
+    @ApiOperation("修改密码")
+    @PostMapping(value = "/updatePass")
+    public ResponseEntity<Object> updatePass(@RequestBody UserPassVo passVo){
+        // 密码解密
+        RSA rsa = new RSA(privateKey, null);
+        String oldPass = new String(rsa.decrypt(passVo.getOldPass(), KeyType.PrivateKey));
+        String newPass = new String(rsa.decrypt(passVo.getNewPass(), KeyType.PrivateKey));
+        UserDTO user = userService.findByName(SecurityHolder.getUsername());
+        if(!passwordEncoder.matches(oldPass, user.getPassword())){
+            throw new BadRequestException("修改失败，旧密码错误");
         }
-        return new ResponseEntity<>(new Result(CodeMsg.SUCCESS), HttpStatus.OK);
-    }
-
-    /**
-     * 修改密码
-     *
-     * @param user
-     * @return
-     */
-    @PostMapping(value = "/user/updatePass")
-    public ResponseEntity<Void> updatePass(@RequestBody User user) {
-        UserDetails userDetails = SecurityHolder.getUserDetails();
-        if (userDetails.getPassword().equals(AesEncryptUtil.encryptPassword(userDetails.getUsername() + user.getPassword()))) {
+        if(passwordEncoder.matches(newPass, user.getPassword())){
             throw new BadRequestException("新密码不能与旧密码相同");
         }
-        userService.updatePass(userDetails.getUsername(), AesEncryptUtil.encryptPassword(userDetails.getUsername() + user.getPassword()));
+        userService.updatePass(user.getUsername(),passwordEncoder.encode(newPass));
         return new ResponseEntity<>(HttpStatus.OK);
     }
 
-    /**
-     * 修改头像
-     *
-     * @param file
-     * @return
-     */
-    @PostMapping(value = "/user/updateAvatar")
-    public ResponseEntity<Void> updateAvatar(@RequestParam MultipartFile file) {
-        Picture picture = pictureService.upload(file, SecurityHolder.getUsername());
-        userService.updateAvatar(SecurityHolder.getUsername(), picture.getUrl());
+    @ApiOperation("修改头像")
+    @PostMapping(value = "/updateAvatar")
+    public ResponseEntity<Object> updateAvatar(@RequestParam MultipartFile file){
+        userService.updateAvatar(file);
         return new ResponseEntity<>(HttpStatus.OK);
     }
 
-    /**
-     * 修改邮箱
-     *
-     * @param user
-     * @param user
-     * @return
-     */
     @Log("修改邮箱")
-    @PostMapping(value = "/user/updateEmail/{code}")
-    public ResponseEntity<Void> updateEmail(@PathVariable String code, @RequestBody User user) {
-        UserDetails userDetails = SecurityHolder.getUserDetails();
-        if (!userDetails.getPassword().equals(AesEncryptUtil.encryptPassword(userDetails.getUsername() + user.getPassword()))) {
+    @ApiOperation("修改邮箱")
+    @PostMapping(value = "/updateEmail/{code}")
+    public ResponseEntity<Object> updateEmail(@PathVariable String code,@RequestBody User user){
+        // 密码解密
+        RSA rsa = new RSA(privateKey, null);
+        String password = new String(rsa.decrypt(user.getPassword(), KeyType.PrivateKey));
+        UserDTO userDto = userService.findByName(SecurityHolder.getUsername());
+        if(!passwordEncoder.matches(password, userDto.getPassword())){
             throw new BadRequestException("密码错误");
         }
-        VerificationCode verificationCode = new VerificationCode(code, CommEnum.RESET_MAIL.getEntityName(), "email", user.getEmail());
+        VerificationCode verificationCode = new VerificationCode(code, ElAdminConstant.RESET_MAIL,"email",user.getEmail());
         verificationCodeService.validated(verificationCode);
-        userService.updateEmail(userDetails.getUsername(), user.getEmail());
+        userService.updateEmail(userDto.getUsername(),user.getEmail());
         return new ResponseEntity<>(HttpStatus.OK);
-    }
-
-    /**
-     * 发送邮箱验证码
-     * @param code
-     * @return
-     */
-    @PostMapping(value = "/code/resetEmail")
-    public ResponseEntity<Void> resetEmail(@RequestBody VerificationCode code) {
-        sendEmail(code);
-        return new ResponseEntity<>(HttpStatus.OK);
-    }
-
-    private void sendEmail(VerificationCode code) {
-        code.setScenes(CommEnum.RESET_MAIL.getEntityName());
-        EmailVo emailVo = verificationCodeService.sendEmail(code);
-        emailService.send(emailVo, emailService.find());
     }
 
     /**
      * 如果当前用户的角色级别低于创建用户的角色级别，则抛出权限不足的错误
-     *
-     * @param resources
+     * @param resources /
      */
     private void checkLevel(User resources) {
-        Integer currentLevel = Collections.min(roleService.findByUsers_Id(SecurityHolder.getUserId()).stream().map(RoleSmallDTO::getLevel).collect(Collectors.toList()));
+        UserDTO user = userService.findByName(SecurityHolder.getUsername());
+        Integer currentLevel =  Collections.min(roleService.findByUsersId(user.getId()).stream().map(RoleSmallDTO::getLevel).collect(Collectors.toList()));
         Integer optLevel = roleService.findByRoles(resources.getRoles());
         if (currentLevel > optLevel) {
             throw new BadRequestException("角色权限不足");

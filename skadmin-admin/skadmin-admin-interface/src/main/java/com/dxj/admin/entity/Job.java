@@ -1,6 +1,8 @@
 package com.dxj.admin.entity;
 
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 
 import javax.persistence.*;
@@ -10,23 +12,22 @@ import java.io.Serializable;
 import java.sql.Timestamp;
 
 /**
-* @author dxj
-* @date 2019-03-29
-*/
+ * @author dxj
+ * @date 2019-03-29
+ */
 @Entity
-@Data
-@Table(name="job")
+@Getter
+@Setter
+@Table(name = "job")
 public class Job implements Serializable {
 
-   // ID
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")
     @NotNull(groups = Update.class)
     private Long id;
 
-    // 名称
-    @Column(name = "name",nullable = false)
+    @Column(name = "name", nullable = false)
     @NotBlank
     private String name;
 
@@ -34,8 +35,7 @@ public class Job implements Serializable {
     @NotNull
     private Long sort;
 
-    // 状态
-    @Column(name = "enabled",nullable = false)
+    @Column(name = "enabled", nullable = false)
     @NotNull
     private Boolean enabled;
 
@@ -43,10 +43,10 @@ public class Job implements Serializable {
     @JoinColumn(name = "dept_id")
     private Dept dept;
 
-    // 创建日期
     @Column(name = "create_time")
     @CreationTimestamp
     private Timestamp createTime;
 
-    public interface Update {}
+    public @interface Update {
+    }
 }

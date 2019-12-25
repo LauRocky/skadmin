@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 import java.util.Date;
 
 /**
- * @author Zheng Jie
+ * @author Sinkiang
  */
 @Data
 @AllArgsConstructor

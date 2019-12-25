@@ -1,3 +1,4 @@
+${AnsiColor.BRIGHT_BLUE}
         _                  _               _
        | |                | |             (_)
   ___  | | __   __ _    __| |  _ __ ___    _   _ __
@@ -5,4 +6,7 @@
  \__ \ |   <  | (_| | | (_| | | | | | | | | | | | | |
  |___/ |_|\_\  \__,_|  \__,_| |_| |_| |_| |_| |_| |_|
 
- :: Spring Boot ::       (v2.1.0.RELEASE)
+ ${AnsiColor.BRIGHT_GREEN}
+ SkAdmin Version: 1.0.0
+ Spring Boot Version: ${spring-boot.version}${spring-boot.formatted-version}
+ ${AnsiColor.BLACK}

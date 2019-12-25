@@ -14,6 +14,10 @@ public class MenuDTO {
 
     private Long id;
 
+    private Integer type;
+
+    private String permission;
+
     private String name;
 
     private Long sort;
@@ -25,6 +29,12 @@ public class MenuDTO {
     private Long pid;
 
     private Boolean iFrame;
+
+    private Boolean cache;
+
+    private Boolean hidden;
+
+    private String componentName;
 
     private String icon;
 

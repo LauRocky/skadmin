@@ -7,6 +7,8 @@ import com.dxj.admin.service.DictDetailService;
 import com.dxj.common.enums.CommEnum;
 import com.dxj.common.exception.BadRequestException;
 import com.dxj.log.annotation.Log;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -25,58 +27,65 @@ import java.util.Map;
  * @date 2019-04-10
  */
 @RestController
-@RequestMapping("api")
+@Api(tags = "系统：字典详情管理")
+@RequestMapping("/api/dictDetail")
 public class DictDetailController {
 
     private final DictDetailService dictDetailService;
 
+    private static final String ENTITY_NAME = "dictDetail";
 
-    @Autowired
     public DictDetailController(DictDetailService dictDetailService) {
         this.dictDetailService = dictDetailService;
     }
 
     @Log("查询字典详情")
-    @GetMapping(value = "/dictDetail")
-    public ResponseEntity<Map<String, Object>> getDictDetail(DictDetailQuery query,
-                                                             @PageableDefault(sort = {"sort"}, direction = Sort.Direction.ASC) Pageable pageable) {
-        return new ResponseEntity<>(dictDetailService.queryAll(query, pageable), HttpStatus.OK);
+    @ApiOperation("查询字典详情")
+    @GetMapping
+    public ResponseEntity<Object> getDictDetails(DictDetailQuery criteria,
+                                                 @PageableDefault(sort = {"sort"}, direction = Sort.Direction.ASC) Pageable pageable){
+        return new ResponseEntity<>(dictDetailService.queryAll(criteria,pageable),HttpStatus.OK);
     }
 
     @Log("查询多个字典详情")
-    @GetMapping(value = "/dictDetail/map")
-    public ResponseEntity<Map<String, Object>> getDictDetailMaps(DictDetailQuery criteria,
-                                            @PageableDefault(sort = {"sort"}, direction = Sort.Direction.ASC) Pageable pageable) {
-        String[] nameArr = criteria.getDictName().split(",");
-        Map<String, Object> map = new HashMap<>(nameArr.length);
-        for (String name : nameArr) {
-            map.put(name, dictDetailService.queryAll(criteria, pageable).get("content"));
+    @ApiOperation("查询多个字典详情")
+    @GetMapping(value = "/map")
+    public ResponseEntity<Object> getDictDetailMaps(DictDetailQuery criteria,
+                                                    @PageableDefault(sort = {"sort"}, direction = Sort.Direction.ASC) Pageable pageable){
+        String[] names = criteria.getDictName().split(",");
+        Map<String,Object> map = new HashMap<>(names.length);
+        for (String name : names) {
+            criteria.setDictName(name);
+            map.put(name,dictDetailService.queryAll(criteria,pageable).get("content"));
         }
-        return new ResponseEntity<>(map, HttpStatus.OK);
+        return new ResponseEntity<>(map,HttpStatus.OK);
     }
 
     @Log("新增字典详情")
-    @PostMapping(value = "/dictDetail")
-    @PreAuthorize("hasAnyRole('ADMIN','DICT_ALL','DICT_CREATE')")
-    public ResponseEntity<DictDetailDTO> create(@Validated @RequestBody DictDetail resources) {
+    @ApiOperation("新增字典详情")
+    @PostMapping
+    @PreAuthorize("@el.check('dict:add')")
+    public ResponseEntity<Object> create(@Validated @RequestBody DictDetail resources){
         if (resources.getId() != null) {
-            throw new BadRequestException("A new " + CommEnum.DICT_DETAIL_ENTITY + " cannot already have an ID");
+            throw new BadRequestException("A new "+ ENTITY_NAME +" cannot already have an ID");
         }
-        return new ResponseEntity<>(dictDetailService.create(resources), HttpStatus.CREATED);
+        return new ResponseEntity<>(dictDetailService.create(resources),HttpStatus.CREATED);
     }
 
     @Log("修改字典详情")
-    @PutMapping(value = "/dictDetail")
-    @PreAuthorize("hasAnyRole('ADMIN','DICT_ALL','DICT_EDIT')")
-    public ResponseEntity<Void> update(@Validated(DictDetail.Update.class) @RequestBody DictDetail resources) {
+    @ApiOperation("修改字典详情")
+    @PutMapping
+    @PreAuthorize("@el.check('dict:edit')")
+    public ResponseEntity<Object> update(@Validated(DictDetail.Update.class) @RequestBody DictDetail resources){
         dictDetailService.update(resources);
         return new ResponseEntity<>(HttpStatus.NO_CONTENT);
     }
 
     @Log("删除字典详情")
-    @DeleteMapping(value = "/dictDetail/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','DICT_ALL','DICT_DELETE')")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    @ApiOperation("删除字典详情")
+    @DeleteMapping(value = "/{id}")
+    @PreAuthorize("@el.check('dict:del')")
+    public ResponseEntity<Object> delete(@PathVariable Long id){
         dictDetailService.delete(id);
         return new ResponseEntity<>(HttpStatus.OK);
     }

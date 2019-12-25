@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
  * @date 2019-03-23
  */
 @Service
-@Mapper(componentModel = "spring", uses = {PermissionMapper.class, MenuMapper.class, DeptMapper.class}, unmappedTargetPolicy = ReportingPolicy.IGNORE)
+@Mapper(componentModel = "spring", uses = {MenuMapper.class, DeptMapper.class}, unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface RoleMapper extends EntityMapper<RoleDTO, Role> {
 
 }

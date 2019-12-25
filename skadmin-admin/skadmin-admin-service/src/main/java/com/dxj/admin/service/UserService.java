@@ -1,19 +1,17 @@
 package com.dxj.admin.service;
 
 import com.dxj.admin.entity.User;
+import com.dxj.admin.entity.UserAvatar;
+import com.dxj.admin.entity.dto.RoleSmallDTO;
 import com.dxj.admin.entity.dto.UserDTO;
 import com.dxj.admin.mapper.UserMapper;
 import com.dxj.admin.query.UserQuery;
+import com.dxj.admin.repository.UserAvatarRepository;
 import com.dxj.admin.repository.UserRepository;
-import com.dxj.common.enums.CommEnum;
 import com.dxj.common.exception.EntityExistException;
 import com.dxj.common.exception.EntityNotFoundException;
-import com.dxj.common.util.AesEncryptUtil;
-import com.dxj.common.util.BaseQuery;
-import com.dxj.common.util.PageUtil;
-import com.dxj.common.util.ValidationUtil;
-import com.dxj.monitor.service.RedisService;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.dxj.common.util.*;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheConfig;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -22,10 +20,13 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.util.Date;
-import java.util.Map;
-import java.util.Optional;
+import javax.servlet.http.HttpServletResponse;
+import java.io.File;
+import java.io.IOException;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * @author dxj
@@ -37,69 +38,73 @@ import java.util.Optional;
 public class UserService {
 
     private final UserRepository userRepository;
-
     private final UserMapper userMapper;
+    private final RedisUtils redisUtils;
+    private final UserAvatarRepository userAvatarRepository;
 
-    private final RedisService redisService;
+    @Value("${file.avatar}")
+    private String avatar;
 
-    @Autowired
-    public UserService(UserRepository userRepository, UserMapper userMapper, RedisService redisService) {
+    public UserService(UserRepository userRepository, UserMapper userMapper, RedisUtils redisUtils, UserAvatarRepository userAvatarRepository) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
-        this.redisService = redisService;
+        this.redisUtils = redisUtils;
+        this.userAvatarRepository = userAvatarRepository;
+    }
+
+    @Cacheable
+    public Object queryAll(UserQuery criteria, Pageable pageable) {
+        Page<User> page = userRepository.findAll((root, criteriaQuery, criteriaBuilder) -> BaseQuery.getPredicate(root,criteria,criteriaBuilder),pageable);
+        return PageUtil.toPage(page.map(userMapper::toDto));
+    }
+
+    @Cacheable
+    public List<UserDTO> queryAll(UserQuery criteria) {
+        List<User> users = userRepository.findAll((root, criteriaQuery, criteriaBuilder) -> BaseQuery.getPredicate(root,criteria,criteriaBuilder));
+        return userMapper.toDto(users);
     }
 
     @Cacheable(key = "#p0")
     public UserDTO findById(long id) {
-        Optional<User> user = userRepository.findById(id);
-        ValidationUtil.isNull(user, "User", "id", id);
-        return userMapper.toDto(user.orElse(null));
+        User user = userRepository.findById(id).orElseGet(User::new);
+        ValidationUtil.isNull(user.getId(),"User","id",id);
+        return userMapper.toDto(user);
     }
 
     @CacheEvict(allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public UserDTO create(User resources) {
-
-        if (userRepository.findByUsername(resources.getUsername()) != null) {
-            throw new EntityExistException(User.class, "username", resources.getUsername());
+        if(userRepository.findByUsername(resources.getUsername())!=null){
+            throw new EntityExistException(User.class,"username",resources.getUsername());
         }
-
-        if (userRepository.findByEmail(resources.getEmail()) != null) {
-            throw new EntityExistException(User.class, "email", resources.getEmail());
+        if(userRepository.findByEmail(resources.getEmail())!=null){
+            throw new EntityExistException(User.class,"email",resources.getEmail());
         }
-
-        // 默认密码 123456，此密码是加密后的字符
-        resources.setPassword(AesEncryptUtil.encryptPassword(resources.getUsername() + CommEnum.USER_PASSWORD.getEntityName()));
-        resources.setAvatar(CommEnum.USER_AVATAR.getEntityName());
         return userMapper.toDto(userRepository.save(resources));
     }
 
     @CacheEvict(allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public void update(User resources) {
-        Optional<User> userOptional = userRepository.findById(resources.getId());
-        ValidationUtil.isNull(userOptional, "User", "id", resources.getId());
-
-        User user = userOptional.orElse(null);
-
-        assert user != null;
+        User user = userRepository.findById(resources.getId()).orElseGet(User::new);
+        ValidationUtil.isNull(user.getId(),"User","id",resources.getId());
         User user1 = userRepository.findByUsername(user.getUsername());
         User user2 = userRepository.findByEmail(user.getEmail());
 
-        if (user1 != null && !user.getId().equals(user1.getId())) {
-            throw new EntityExistException(User.class, "username", resources.getUsername());
+        if(user1 !=null&&!user.getId().equals(user1.getId())){
+            throw new EntityExistException(User.class,"username",resources.getUsername());
         }
 
-        if (user2 != null && !user.getId().equals(user2.getId())) {
-            throw new EntityExistException(User.class, "email", resources.getEmail());
+        if(user2!=null&&!user.getId().equals(user2.getId())){
+            throw new EntityExistException(User.class,"email",resources.getEmail());
         }
 
         // 如果用户的角色改变了，需要手动清理下缓存
         if (!resources.getRoles().equals(user.getRoles())) {
             String key = "role::loadPermissionByUser:" + user.getUsername();
-            redisService.delete(key);
+            redisUtils.del(key);
             key = "role::findByUsers_Id:" + user.getId();
-            redisService.delete(key);
+            redisUtils.del(key);
         }
 
         user.setUsername(resources.getUsername());
@@ -109,19 +114,33 @@ public class UserService {
         user.setDept(resources.getDept());
         user.setJob(resources.getJob());
         user.setPhone(resources.getPhone());
+        user.setNickName(resources.getNickName());
+        user.setSex(resources.getSex());
         userRepository.save(user);
     }
 
     @CacheEvict(allEntries = true)
     @Transactional(rollbackFor = Exception.class)
-    public void delete(Long id) {
-        userRepository.deleteById(id);
+    public void updateCenter(User resources) {
+        User user = userRepository.findById(resources.getId()).orElseGet(User::new);
+        user.setNickName(resources.getNickName());
+        user.setPhone(resources.getPhone());
+        user.setSex(resources.getSex());
+        userRepository.save(user);
+    }
+
+    @CacheEvict(allEntries = true)
+    @Transactional(rollbackFor = Exception.class)
+    public void delete(Set<Long> ids) {
+        for (Long id : ids) {
+            userRepository.deleteById(id);
+        }
     }
 
     @Cacheable(key = "'loadUserByUsername:'+#p0")
     public UserDTO findByName(String userName) {
         User user;
-        if (ValidationUtil.isEmail(userName)) {
+        if(ValidationUtil.isEmail(userName)){
             user = userRepository.findByEmail(userName);
         } else {
             user = userRepository.findByUsername(userName);
@@ -136,27 +155,51 @@ public class UserService {
     @CacheEvict(allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public void updatePass(String username, String pass) {
-        userRepository.updatePass(username, pass, new Date());
+        userRepository.updatePass(username,pass,new Date());
     }
 
     @CacheEvict(allEntries = true)
     @Transactional(rollbackFor = Exception.class)
-    public void updateAvatar(String username, String url) {
-        userRepository.updateAvatar(username, url);
+    public void updateAvatar(MultipartFile multipartFile) {
+        User user = userRepository.findByUsername(SecurityHolder.getUsername());
+        UserAvatar userAvatar = user.getUserAvatar();
+        String oldPath = "";
+        if(userAvatar != null){
+            oldPath = userAvatar.getPath();
+        }
+        File file = FileUtil.upload(multipartFile, avatar);
+        assert file != null;
+        userAvatar = userAvatarRepository.save(new UserAvatar(userAvatar,file.getName(), file.getPath(), FileUtil.getSize(multipartFile.getSize())));
+        user.setUserAvatar(userAvatar);
+        userRepository.save(user);
+        if(StringUtil.isNotBlank(oldPath)){
+            FileUtil.del(oldPath);
+        }
     }
 
     @CacheEvict(allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public void updateEmail(String username, String email) {
-        userRepository.updateEmail(username, email);
+        userRepository.updateEmail(username,email);
     }
 
-    /**
-     * 分页
-     */
-    @Cacheable(keyGenerator = "keyGenerator")
-    public Map<String, Object> queryAll(UserQuery query, Pageable pageable) {
-        Page<User> page = userRepository.findAll((root, criteriaQuery, criteriaBuilder) -> BaseQuery.getPredicate(root, query, criteriaBuilder), pageable);
-        return PageUtil.toPage(page.map(userMapper::toDto));
+    public void download(List<UserDTO> queryAll, HttpServletResponse response) throws IOException {
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (UserDTO userDTO : queryAll) {
+            List<String> roles = userDTO.getRoles().stream().map(RoleSmallDTO::getName).collect(Collectors.toList());
+            Map<String,Object> map = new LinkedHashMap<>();
+            map.put("用户名", userDTO.getUsername());
+            map.put("头像", userDTO.getAvatar());
+            map.put("邮箱", userDTO.getEmail());
+            map.put("状态", userDTO.getEnabled() ? "启用" : "禁用");
+            map.put("手机号码", userDTO.getPhone());
+            map.put("角色", roles);
+            map.put("部门", userDTO.getDept().getName());
+            map.put("岗位", userDTO.getJob().getName());
+            map.put("最后修改密码的时间", userDTO.getLastPasswordResetTime());
+            map.put("创建日期", userDTO.getCreateTime());
+            list.add(map);
+        }
+        FileUtil.downloadExcel(list, response);
     }
 }

@@ -4,6 +4,8 @@ import com.dxj.common.annotation.Query;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.sql.Timestamp;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -19,14 +21,14 @@ public class UserQuery implements Serializable {
     @Query(propName = "id", type = Query.Type.IN, joinName = "dept")
     private Set<Long> deptIds;
 
-    @Query(type = Query.Type.LIKE)
-    private String username;
-
-    @Query(type = Query.Type.LIKE)
-    private String email;
+    @Query(blurry = "email,username,nickName")
+    private String blurry;
 
     @Query
     private Boolean enabled;
 
     private Long deptId;
+
+    @Query(type = Query.Type.BETWEEN)
+    private List<Timestamp> createTime;
 }

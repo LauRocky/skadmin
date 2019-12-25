@@ -34,17 +34,22 @@ public class DictDetailService {
 
     private final DictDetailMapper dictDetailMapper;
 
-    @Autowired
     public DictDetailService(DictDetailRepository dictDetailRepository, DictDetailMapper dictDetailMapper) {
         this.dictDetailRepository = dictDetailRepository;
         this.dictDetailMapper = dictDetailMapper;
     }
 
+    @Cacheable
+    public Map<String,Object> queryAll(DictDetailQuery criteria, Pageable pageable) {
+        Page<DictDetail> page = dictDetailRepository.findAll((root, criteriaQuery, criteriaBuilder) -> BaseQuery.getPredicate(root,criteria,criteriaBuilder),pageable);
+        return PageUtil.toPage(page.map(dictDetailMapper::toDto));
+    }
+
     @Cacheable(key = "#p0")
     public DictDetailDTO findById(Long id) {
-        Optional<DictDetail> dictDetail = dictDetailRepository.findById(id);
-        ValidationUtil.isNull(dictDetail, "DictDetail", "id", id);
-        return dictDetailMapper.toDto(dictDetail.orElse(null));
+        DictDetail dictDetail = dictDetailRepository.findById(id).orElseGet(DictDetail::new);
+        ValidationUtil.isNull(dictDetail.getId(),"DictDetail","id",id);
+        return dictDetailMapper.toDto(dictDetail);
     }
 
     @CacheEvict(allEntries = true)
@@ -56,12 +61,8 @@ public class DictDetailService {
     @CacheEvict(allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public void update(DictDetail resources) {
-        Optional<DictDetail> optionalDictDetail = dictDetailRepository.findById(resources.getId());
-        ValidationUtil.isNull(optionalDictDetail, "DictDetail", "id", resources.getId());
-
-        DictDetail dictDetail = optionalDictDetail.orElse(null);
-        // 此处需自己修改
-        assert dictDetail != null;
+        DictDetail dictDetail = dictDetailRepository.findById(resources.getId()).orElseGet(DictDetail::new);
+        ValidationUtil.isNull( dictDetail.getId(),"DictDetail","id",resources.getId());
         resources.setId(dictDetail.getId());
         dictDetailRepository.save(resources);
     }
@@ -70,14 +71,5 @@ public class DictDetailService {
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
         dictDetailRepository.deleteById(id);
-    }
-
-    /**
-     * 分页
-     */
-    @Cacheable(keyGenerator = "keyGenerator")
-    public Map<String, Object> queryAll(DictDetailQuery query, Pageable pageable) {
-        Page<DictDetail> page = dictDetailRepository.findAll((root, criteriaQuery, criteriaBuilder) -> BaseQuery.getPredicate(root, query, criteriaBuilder), pageable);
-        return PageUtil.toPage(page.map(dictDetailMapper::toDto));
     }
 }

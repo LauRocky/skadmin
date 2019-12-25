@@ -7,6 +7,7 @@ import com.dxj.admin.query.DeptQuery;
 import com.dxj.admin.repository.DeptRepository;
 import com.dxj.common.exception.BadRequestException;
 import com.dxj.common.util.BaseQuery;
+import com.dxj.common.util.FileUtil;
 import com.dxj.common.util.ValidationUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheConfig;
@@ -17,6 +18,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -33,20 +36,24 @@ public class DeptService {
 
     private final DeptMapper deptMapper;
 
-    @Autowired
     public DeptService(DeptRepository deptRepository, DeptMapper deptMapper) {
         this.deptRepository = deptRepository;
         this.deptMapper = deptMapper;
     }
 
-    @Cacheable(key = "#p0")
-    public DeptDTO findById(Long id) {
-        Optional<Dept> dept = deptRepository.findById(id);
-        ValidationUtil.isNull(dept, "Dept", "id", id);
-        return deptMapper.toDto(dept.orElse(null));
+    @Cacheable
+    public List<DeptDTO> queryAll(DeptQuery criteria) {
+        return deptMapper.toDto(deptRepository.findAll((root, criteriaQuery, criteriaBuilder) -> BaseQuery.getPredicate(root,criteria,criteriaBuilder)));
     }
 
-    @Cacheable(keyGenerator = "keyGenerator")
+    @Cacheable(key = "#p0")
+    public DeptDTO findById(Long id) {
+        Dept dept = deptRepository.findById(id).orElseGet(Dept::new);
+        ValidationUtil.isNull(dept.getId(),"Dept","id",id);
+        return deptMapper.toDto(dept);
+    }
+
+    @Cacheable
     public List<Dept> findByPid(long pid) {
         return deptRepository.findByPid(pid);
     }
@@ -55,18 +62,18 @@ public class DeptService {
         return deptRepository.findByRoles_Id(id);
     }
 
-    @Cacheable(keyGenerator = "keyGenerator")
-    public Map<String, Object> buildTree(List<DeptDTO> deptDTOList) {
-        Set<DeptDTO> treeSet = new LinkedHashSet<>();
-        Set<DeptDTO> deptSet = new LinkedHashSet<>();
-        List<String> deptNameList = deptDTOList.stream().map(DeptDTO::getName).collect(Collectors.toList());
+    @Cacheable
+    public Object buildTree(List<DeptDTO> deptDtos) {
+        Set<DeptDTO> trees = new LinkedHashSet<>();
+        Set<DeptDTO> depts= new LinkedHashSet<>();
+        List<String> deptNames = deptDtos.stream().map(DeptDTO::getName).collect(Collectors.toList());
         boolean isChild;
-        for (DeptDTO deptDTO : deptDTOList) {
+        for (DeptDTO deptDTO : deptDtos) {
             isChild = false;
             if ("0".equals(deptDTO.getPid().toString())) {
-                treeSet.add(deptDTO);
+                trees.add(deptDTO);
             }
-            for (DeptDTO it : deptDTOList) {
+            for (DeptDTO it : deptDtos) {
                 if (it.getPid().equals(deptDTO.getId())) {
                     isChild = true;
                     if (deptDTO.getChildren() == null) {
@@ -75,22 +82,22 @@ public class DeptService {
                     deptDTO.getChildren().add(it);
                 }
             }
-            if (isChild) {
-                deptSet.add(deptDTO);
-            } else if (!deptNameList.contains(deptRepository.findNameById(deptDTO.getPid()))) {
-                deptSet.add(deptDTO);
+            if(isChild) {
+                depts.add(deptDTO);
+            } else if(!deptNames.contains(deptRepository.findNameById(deptDTO.getPid()))) {
+                depts.add(deptDTO);
             }
         }
 
-        if (CollectionUtils.isEmpty(treeSet)) {
-            treeSet = deptSet;
+        if (CollectionUtils.isEmpty(trees)) {
+            trees = depts;
         }
 
-        Integer totalElements = deptDTOList.size();
+        Integer totalElements = deptDtos.size();
 
-        Map<String, Object> map = new HashMap<>();
-        map.put("totalElements", totalElements);
-        map.put("content", CollectionUtils.isEmpty(treeSet) ? deptDTOList : treeSet);
+        Map<String,Object> map = new HashMap<>(2);
+        map.put("totalElements",totalElements);
+        map.put("content",CollectionUtils.isEmpty(trees)? deptDtos :trees);
         return map;
     }
 
@@ -103,30 +110,43 @@ public class DeptService {
     @CacheEvict(allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public void update(Dept resources) {
-        if (resources.getId().equals(resources.getPid())) {
+        if(resources.getId().equals(resources.getPid())) {
             throw new BadRequestException("上级不能为自己");
         }
-        Optional<Dept> optionalDept = deptRepository.findById(resources.getId());
-        ValidationUtil.isNull(optionalDept, "Dept", "id", resources.getId());
-
-        Dept dept = optionalDept.orElse(null);
-        // 此处需自己修改
-        assert dept != null;
+        Dept dept = deptRepository.findById(resources.getId()).orElseGet(Dept::new);
+        ValidationUtil.isNull(dept.getId(),"Dept","id",resources.getId());
         resources.setId(dept.getId());
         deptRepository.save(resources);
     }
 
     @CacheEvict(allEntries = true)
     @Transactional(rollbackFor = Exception.class)
-    public void delete(Long id) {
-        deptRepository.deleteById(id);
+    public void delete(Set<DeptDTO> deptDtos) {
+        for (DeptDTO deptDto : deptDtos) {
+            deptRepository.deleteById(deptDto.getId());
+        }
     }
 
-    /**
-     * 不分页
-     */
-    @Cacheable(keyGenerator = "keyGenerator")
-    public List<DeptDTO> queryAll(DeptQuery query) {
-        return deptMapper.toDto(deptRepository.findAll((root, criteriaQuery, criteriaBuilder) -> BaseQuery.getPredicate(root, query, criteriaBuilder)));
+    public void download(List<DeptDTO> deptDtos, HttpServletResponse response) throws IOException {
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (DeptDTO deptDTO : deptDtos) {
+            Map<String,Object> map = new LinkedHashMap<>();
+            map.put("部门名称", deptDTO.getName());
+            map.put("部门状态", deptDTO.getEnabled() ? "启用" : "停用");
+            map.put("创建日期", deptDTO.getCreateTime());
+            list.add(map);
+        }
+        FileUtil.downloadExcel(list, response);
+    }
+
+    public Set<DeptDTO> getDeleteDepts(List<Dept> menuList, Set<DeptDTO> deptDtos) {
+        for (Dept dept : menuList) {
+            deptDtos.add(deptMapper.toDto(dept));
+            List<Dept> depts = deptRepository.findByPid(dept.getId());
+            if(depts!=null && depts.size()!=0){
+                getDeleteDepts(depts, deptDtos);
+            }
+        }
+        return deptDtos;
     }
 }

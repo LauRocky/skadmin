@@ -7,6 +7,8 @@ import com.dxj.admin.service.DictService;
 import com.dxj.common.enums.CommEnum;
 import com.dxj.common.exception.BadRequestException;
 import com.dxj.log.annotation.Log;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -15,53 +17,76 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.util.Map;
 
 /**
  * @author dxj
  * @date 2019-04-10
  */
+@Api(tags = "系统：字典管理")
 @RestController
-@RequestMapping("api")
+@RequestMapping("/api/dict")
 public class DictController {
 
     private final DictService dictService;
 
+    private static final String ENTITY_NAME = "dict";
 
-    @Autowired
     public DictController(DictService dictService) {
         this.dictService = dictService;
     }
 
+    @Log("导出字典数据")
+    @ApiOperation("导出字典数据")
+    @GetMapping(value = "/download")
+    @PreAuthorize("@el.check('dict:list')")
+    public void download(HttpServletResponse response, DictQuery criteria) throws IOException {
+        dictService.download(dictService.queryAll(criteria), response);
+    }
+
     @Log("查询字典")
-    @GetMapping(value = "/dict")
-    @PreAuthorize("hasAnyRole('ADMIN','DICT_ALL','DICT_SELECT')")
-    public ResponseEntity<Map<String, Object>> getDict(DictQuery query, Pageable pageable) {
-        return new ResponseEntity<>(dictService.queryAll(query, pageable), HttpStatus.OK);
+    @ApiOperation("查询字典")
+    @GetMapping(value = "/all")
+    @PreAuthorize("@el.check('dict:list')")
+    public ResponseEntity<Object> all(){
+        return new ResponseEntity<>(dictService.queryAll(new DictQuery()),HttpStatus.OK);
+    }
+
+    @Log("查询字典")
+    @ApiOperation("查询字典")
+    @GetMapping
+    @PreAuthorize("@el.check('dict:list')")
+    public ResponseEntity<Object> getDicts(DictQuery resources, Pageable pageable){
+        return new ResponseEntity<>(dictService.queryAll(resources,pageable),HttpStatus.OK);
     }
 
     @Log("新增字典")
-    @PostMapping(value = "/dict")
-    @PreAuthorize("hasAnyRole('ADMIN','DICT_ALL','DICT_CREATE')")
-    public ResponseEntity<DictDTO> create(@Validated @RequestBody Dict resources) {
+    @ApiOperation("新增字典")
+    @PostMapping
+    @PreAuthorize("@el.check('dict:add')")
+    public ResponseEntity<Object> create(@Validated @RequestBody Dict resources){
         if (resources.getId() != null) {
-            throw new BadRequestException("A new " + CommEnum.DICT_ENTITY + " cannot to create already have an ID");
+            throw new BadRequestException("A new "+ ENTITY_NAME +" cannot already have an ID");
         }
-        return new ResponseEntity<>(dictService.create(resources), HttpStatus.CREATED);
+        return new ResponseEntity<>(dictService.create(resources),HttpStatus.CREATED);
     }
 
     @Log("修改字典")
-    @PutMapping(value = "/dict")
-    @PreAuthorize("hasAnyRole('ADMIN','DICT_ALL','DICT_EDIT')")
-    public ResponseEntity<Void> update(@Validated(Dict.Update.class) @RequestBody Dict resources) {
+    @ApiOperation("修改字典")
+    @PutMapping
+    @PreAuthorize("@el.check('dict:edit')")
+    public ResponseEntity<Object> update(@Validated(Dict.Update.class) @RequestBody Dict resources){
         dictService.update(resources);
         return new ResponseEntity<>(HttpStatus.NO_CONTENT);
     }
 
     @Log("删除字典")
-    @DeleteMapping(value = "/dict/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','DICT_ALL','DICT_DELETE')")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    @ApiOperation("删除字典")
+    @DeleteMapping(value = "/{id}")
+    @PreAuthorize("@el.check('dict:del')")
+    public ResponseEntity<Object> delete(@PathVariable Long id){
         dictService.delete(id);
         return new ResponseEntity<>(HttpStatus.OK);
     }

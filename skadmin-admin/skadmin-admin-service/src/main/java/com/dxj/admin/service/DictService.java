@@ -1,11 +1,14 @@
 package com.dxj.admin.service;
 
+import cn.hutool.core.collection.CollectionUtil;
 import com.dxj.admin.entity.Dict;
 import com.dxj.admin.entity.dto.DictDTO;
+import com.dxj.admin.entity.dto.DictDetailDTO;
 import com.dxj.admin.mapper.DictMapper;
 import com.dxj.admin.query.DictQuery;
 import com.dxj.admin.repository.DictRepository;
 import com.dxj.common.util.BaseQuery;
+import com.dxj.common.util.FileUtil;
 import com.dxj.common.util.PageUtil;
 import com.dxj.common.util.ValidationUtil;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,8 +21,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Map;
-import java.util.Optional;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.*;
 
 /**
  * @author dxj
@@ -34,17 +38,27 @@ public class DictService {
 
     private final DictMapper dictMapper;
 
-    @Autowired
     public DictService(DictRepository dictRepository, DictMapper dictMapper) {
         this.dictRepository = dictRepository;
         this.dictMapper = dictMapper;
     }
 
+    @Cacheable
+    public Map<String, Object> queryAll(DictQuery dict, Pageable pageable){
+        Page<Dict> page = dictRepository.findAll((root, query, cb) -> BaseQuery.getPredicate(root, dict, cb), pageable);
+        return PageUtil.toPage(page.map(dictMapper::toDto));
+    }
+
+    public List<DictDTO> queryAll(DictQuery dict) {
+        List<Dict> list = dictRepository.findAll((root, query, cb) -> BaseQuery.getPredicate(root, dict, cb));
+        return dictMapper.toDto(list);
+    }
+
     @Cacheable(key = "#p0")
     public DictDTO findById(Long id) {
-        Optional<Dict> dict = dictRepository.findById(id);
-        ValidationUtil.isNull(dict, "Dict", "id", id);
-        return dictMapper.toDto(dict.orElse(null));
+        Dict dict = dictRepository.findById(id).orElseGet(Dict::new);
+        ValidationUtil.isNull(dict.getId(),"Dict","id",id);
+        return dictMapper.toDto(dict);
     }
 
     @CacheEvict(allEntries = true)
@@ -56,12 +70,8 @@ public class DictService {
     @CacheEvict(allEntries = true)
     @Transactional(rollbackFor = Exception.class)
     public void update(Dict resources) {
-        Optional<Dict> optionalDict = dictRepository.findById(resources.getId());
-        ValidationUtil.isNull(optionalDict, "Dict", "id", resources.getId());
-
-        Dict dict = optionalDict.orElse(null);
-        // 此处需自己修改
-        assert dict != null;
+        Dict dict = dictRepository.findById(resources.getId()).orElseGet(Dict::new);
+        ValidationUtil.isNull( dict.getId(),"Dict","id",resources.getId());
         resources.setId(dict.getId());
         dictRepository.save(resources);
     }
@@ -72,14 +82,29 @@ public class DictService {
         dictRepository.deleteById(id);
     }
 
-    /**
-     * 分页
-     */
-    @Cacheable(keyGenerator = "keyGenerator")
-    public Map<String, Object> queryAll(DictQuery query, Pageable pageable) {
-        Page<Dict> page = dictRepository.findAll((root, criteriaQuery, criteriaBuilder) -> BaseQuery.getPredicate(root, query, criteriaBuilder), pageable);
-        return PageUtil.toPage(page.map(dictMapper::toDto));
+    public void download(List<DictDTO> dictDtos, HttpServletResponse response) throws IOException {
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (DictDTO dictDTO : dictDtos) {
+            if(CollectionUtil.isNotEmpty(dictDTO.getDictDetails())){
+                for (DictDetailDTO dictDetail : dictDTO.getDictDetails()) {
+                    Map<String,Object> map = new LinkedHashMap<>();
+                    map.put("字典名称", dictDTO.getName());
+                    map.put("字典描述", dictDTO.getRemark());
+                    map.put("字典标签", dictDetail.getLabel());
+                    map.put("字典值", dictDetail.getValue());
+                    map.put("创建日期", dictDetail.getCreateTime());
+                    list.add(map);
+                }
+            } else {
+                Map<String,Object> map = new LinkedHashMap<>();
+                map.put("字典名称", dictDTO.getName());
+                map.put("字典描述", dictDTO.getRemark());
+                map.put("字典标签", null);
+                map.put("字典值", null);
+                map.put("创建日期", dictDTO.getCreateTime());
+                list.add(map);
+            }
+        }
+        FileUtil.downloadExcel(list, response);
     }
-
-
 }
